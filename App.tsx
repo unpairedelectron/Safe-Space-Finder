@@ -14,11 +14,13 @@ import ReviewScreen from './src/screens/ReviewScreen';
 import DemoScreen from './src/screens/DemoScreen';
 import TabNavigator from './src/navigation/TabNavigator';
 import { notificationService } from './src/services/NotificationService';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
 
 const Stack = createStackNavigator();
+const queryClient = new QueryClient();
 
 export default function App() {
   const colorScheme = useColorScheme();
@@ -101,6 +103,7 @@ export default function App() {
   return (
     <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
       <PaperProvider theme={theme}>
+        <QueryClientProvider client={queryClient}>
         <NavigationContainer
           linking={{
             prefixes: ['safespace://'],
@@ -176,6 +179,7 @@ export default function App() {
             />
           </Stack.Navigator>
         </NavigationContainer>
+        </QueryClientProvider>
       </PaperProvider>
     </View>
   );

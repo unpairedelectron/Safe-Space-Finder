@@ -15,6 +15,8 @@ import SwipeableList, {
 import { ProgressiveImage, useOptimisticUpdate } from '../components/LoadingOptimizations';
 import { notificationService } from '../services/NotificationService';
 import { AnimatedButton } from '../components/AnimatedButton';
+import { useQuery } from '@tanstack/react-query';
+import { fetchBusinesses } from '../services/api/businessApi';
 
 const mockBusinesses = [
   { 
@@ -47,8 +49,15 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
-  const [businesses, setBusinesses] = useState(mockBusinesses);
   const [refreshing, setRefreshing] = useState(false);
+
+  const { data: apiBusinesses, isLoading: apiLoading, error: apiError, refetch } = useQuery({
+    queryKey: ['businesses'],
+    queryFn: fetchBusinesses,
+    staleTime: 1000 * 60,
+  });
+
+  const businesses = apiBusinesses || mockBusinesses;
 
   const categories = [
     { id: 'all', name: 'All', icon: '🏢' },
@@ -68,14 +77,12 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
     'Minority-Owned',
   ];
 
-  const filteredBusinesses = businesses.filter(business => {
+  const filteredBusinesses = businesses.filter((business: any) => {
     const matchesSearch = business.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         business.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === 'all' || business.category === selectedCategory;
-    const matchesFilters = selectedFilters.length === 0 || 
-                          selectedFilters.some(filter => business.tags.includes(filter));
-    
-    return matchesSearch && matchesCategory && matchesFilters;
+      (business.description ? business.description.toLowerCase().includes(searchQuery.toLowerCase()) : false);
+    const matchesFilters = selectedFilters.length === 0 ||
+      (business.tags ? selectedFilters.some(filter => business.tags.includes(filter)) : false);
+    return matchesSearch && matchesFilters;
   });
 
   const toggleFilter = (filter: string) => {
@@ -113,6 +120,35 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
     // Handle bookmark action
     console.log('Bookmarked business with id:', id);
   };
+
+  const renderBusinessCard = (item: any) => (
+    <AnimatedButton
+      onPress={() => navigation.navigate('BusinessDetail', { businessId: item.id })}
+      style={styles.businessCard}
+      hapticType="light"
+    >
+      <Card style={styles.card}>
+        <Card.Content>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardContent}>
+              <Title>{item.title}</Title>
+              <Paragraph>{item.subtitle}</Paragraph>
+              <View style={styles.ratingContainer}>
+                <Paragraph style={styles.rating}>⭐ {item.rating}</Paragraph>
+              </View>
+            </View>
+          </View>
+          <View style={styles.tagsContainer}>
+            {item.tags?.map((tag: string, index: number) => (
+              <Chip key={index} style={styles.tag} compact>
+                {tag}
+              </Chip>
+            ))}
+          </View>
+        </Card.Content>
+      </Card>
+    </AnimatedButton>
+  );
 
   return (
     <View style={styles.container}>
@@ -174,49 +210,20 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
       <Divider style={styles.divider} />
 
       <SwipeableList
-        data={filteredBusinesses.map(item => ({
+        data={filteredBusinesses.map((item: any) => ({
           id: item.id,
           title: item.name,
           subtitle: item.description,
           rating: item.rating,
           category: item.category,
-          tags: item.tags,
+          tags: item.tags || [],
         }))}
-        renderItem={({ item }) => (
-          <AnimatedButton
-            onPress={() => navigation.navigate('BusinessDetail', { businessId: item.id })}
-            style={styles.businessCard}
-            hapticType="light"
-          >
-            <Card style={styles.card}>
-              <Card.Content>
-                <View style={styles.cardHeader}>
-                  <View style={styles.cardContent}>
-                    <Title>{item.title}</Title>
-                    <Paragraph>{item.subtitle}</Paragraph>
-                    <View style={styles.ratingContainer}>
-                      <Paragraph style={styles.rating}>⭐ {item.rating}</Paragraph>
-                    </View>
-                  </View>
-                </View>
-                <View style={styles.tagsContainer}>
-                  {item.tags?.map((tag: string, index: number) => (
-                    <Chip key={index} style={styles.tag} compact>
-                      {tag}
-                    </Chip>
-                  ))}
-                </View>
-              </Card.Content>
-            </Card>
-          </AnimatedButton>
-        )}
-        rightActions={[
-          createBookmarkAction(() => console.log('Bookmark')),
-          createShareAction(() => console.log('Share')),
-        ]}
-        onRefresh={onRefresh}
-        refreshing={refreshing}
-        emptyText="No businesses match your criteria."
+        renderItem={({ item }) => renderBusinessCard(item as any)}
+        leftActions={[createLikeAction(() => console.log('Like'))]}
+        rightActions={[createBookmarkAction(() => console.log('Bookmark')), createShareAction(() => console.log('Share'))]}
+        refreshing={refreshing || apiLoading}
+        onRefresh={() => { onRefresh(); refetch(); }}
+        emptyText="No businesses found"
       />
 
       <FAB
