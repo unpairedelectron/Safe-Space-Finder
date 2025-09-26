@@ -13,6 +13,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import { useAppSnackbar } from '@/components/SnackbarHost';
 import { humanizeApiError } from '@/utils/apiError';
 import { ds } from '@/theme/designSystem';
+import { summarizeReviews } from '@/services/api/aiApi';
 
 // API integration WIP: will replace mock data with real fetch using businessApi
 export default function BusinessDetailScreen({ route, navigation }: { route: any; navigation: any }) {
@@ -51,6 +52,14 @@ export default function BusinessDetailScreen({ route, navigation }: { route: any
   });
 
   const reviews: ReviewDTO[] = reviewsPages?.pages.flatMap((p) => p.items) || [];
+
+  // AI summary (disabled until enough reviews)
+  const { data: reviewSummary, isLoading: summaryLoading, refetch: refetchSummary } = useQuery({
+    queryKey: ['reviewSummary', businessId, reviews.length],
+    queryFn: () => summarizeReviews(reviews.map(r => r.comment)),
+    enabled: reviews.length >= 3,
+    staleTime: 5 * 60 * 1000,
+  });
 
   // Like review mutation (optimistic)
   const likeMutation = useMutation({
@@ -186,6 +195,17 @@ export default function BusinessDetailScreen({ route, navigation }: { route: any
       />
 
       <View style={styles.reviewsSection}>
+        {summaryLoading && reviews.length >= 3 ? (
+          <Paragraph accessibilityLabel="Generating summary of reviews">Summarizing community feedback…</Paragraph>
+        ) : reviewSummary ? (
+          <Card style={styles.summaryCard} accessibilityLabel="AI-generated summary of reviews">
+            <Card.Content>
+              <Title style={styles.summaryTitle}>Community Summary</Title>
+              <Paragraph style={styles.summaryText}>{reviewSummary}</Paragraph>
+              <Button mode="text" compact onPress={() => refetchSummary()} accessibilityLabel="Refresh summary">Refresh</Button>
+            </Card.Content>
+          </Card>
+        ) : null}
         <Title style={styles.sectionTitle}>Reviews ({reviews.length})</Title>
         <FlatList
           data={reviews}
@@ -240,4 +260,7 @@ const styles = StyleSheet.create({
   reviewActions: { marginTop: ds.spacing(3), alignItems: 'flex-start' },
   addReviewButton: { margin: ds.spacing(4), elevation: 4 },
   buttonContent: { paddingVertical: ds.spacing(2) },
+  summaryCard: { marginBottom: ds.spacing(4), elevation: 2, borderRadius: ds.radii.sm },
+  summaryTitle: { fontSize: 16, fontWeight: '600', marginBottom: ds.spacing(2) },
+  summaryText: { lineHeight: 20 },
 });

@@ -5,6 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { StarRating } from '../components/StarRating';
 import { TagSelector } from '../components/AccessibilityTags';
 import { createReview } from '@/services/api/businessApi';
+import { suggestTagsFromComment } from '@/services/api/aiApi';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppSnackbar } from '@/components/SnackbarHost';
 import { humanizeApiError } from '@/utils/apiError';
@@ -17,6 +18,8 @@ export default function ReviewScreen({ route, navigation }: { route: any; naviga
   const [comment, setComment] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [images, setImages] = useState<string[]>([]);
+  const [tagSuggestions, setTagSuggestions] = useState<string[]>([]);
+  const [isSuggesting, setIsSuggesting] = useState(false);
   const snackbar = useAppSnackbar();
   const queryClient = useQueryClient();
 
@@ -63,6 +66,21 @@ export default function ReviewScreen({ route, navigation }: { route: any; naviga
     mutation.mutate();
   };
 
+  const maybeSuggestTags = async (text: string) => {
+    setComment(text);
+    if (text.trim().length >= 80 && !isSuggesting && tagSuggestions.length === 0) {
+      try {
+        setIsSuggesting(true);
+        const tags = await suggestTagsFromComment(text);
+        setTagSuggestions(tags);
+      } catch (_) {
+        // silent fail
+      } finally {
+        setIsSuggesting(false);
+      }
+    }
+  };
+
   return (
     <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <Appbar.Header>
@@ -81,7 +99,7 @@ export default function ReviewScreen({ route, navigation }: { route: any; naviga
           <TextInput
             label="Share your experience..."
             value={comment}
-            onChangeText={setComment}
+            onChangeText={maybeSuggestTags}
             mode="outlined"
             multiline
             numberOfLines={5}
@@ -89,6 +107,24 @@ export default function ReviewScreen({ route, navigation }: { route: any; naviga
             placeholder="Tell others about your experience at this business. Was it welcoming? Accessible? What made it special?"
             accessibilityLabel="Review comment input"
           />
+          {tagSuggestions.length > 0 && (
+            <View style={{ marginTop: 8 }} accessibilityLabel="Suggested tags">
+              <Title style={styles.sectionTitle}>Suggested Tags</Title>
+              <View style={styles.suggestedTagsRow}>
+                {tagSuggestions.map(t => (
+                  <Button
+                    key={t}
+                    mode={selectedTags.includes(t) ? 'contained' : 'outlined'}
+                    compact
+                    style={styles.suggestedTagButton}
+                    onPress={() => setSelectedTags(prev => prev.includes(t) ? prev.filter(p => p !== t) : [...prev, t])}
+                  >
+                    {t}
+                  </Button>
+                ))}
+              </View>
+            </View>
+          )}
           <Divider style={styles.divider} />
           <Title style={styles.sectionTitle}>Add Photos (Optional)</Title>
           <Button
@@ -201,4 +237,6 @@ const styles = StyleSheet.create({
   submitButtonContent: {
     paddingVertical: 12,
   },
+  suggestedTagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  suggestedTagButton: { marginRight: 8, marginBottom: 8 },
 });
