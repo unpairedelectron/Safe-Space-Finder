@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -39,6 +39,7 @@ interface SwipeableListProps {
   refreshing?: boolean;
   keyExtractor?: (item: SwipeableItemData) => string;
   emptyText?: string;
+  estimatedItemSize?: number; // performance hint
 }
 
 const SwipeableList: React.FC<SwipeableListProps> = ({
@@ -50,8 +51,10 @@ const SwipeableList: React.FC<SwipeableListProps> = ({
   refreshing = false,
   keyExtractor = (item) => item.id,
   emptyText = 'No items found',
+  estimatedItemSize = 120,
 }) => {
-  const renderLeftActions = (data: SwipeableItemData, rowMap: any) => {
+  const memoKeyExtractor = useCallback((item: SwipeableItemData) => keyExtractor(item), [keyExtractor]);
+  const renderLeftActions = useCallback((data: SwipeableItemData, rowMap: any) => {
     if (leftActions.length === 0) return null;
 
     return (
@@ -79,9 +82,9 @@ const SwipeableList: React.FC<SwipeableListProps> = ({
         ))}
       </View>
     );
-  };
+  }, [leftActions, keyExtractor]);
 
-  const renderRightActions = (data: SwipeableItemData, rowMap: any) => {
+  const renderRightActions = useCallback((data: SwipeableItemData, rowMap: any) => {
     if (rightActions.length === 0) return null;
 
     return (
@@ -109,20 +112,20 @@ const SwipeableList: React.FC<SwipeableListProps> = ({
         ))}
       </View>
     );
-  };
+  }, [rightActions, keyExtractor]);
 
-  const renderEmptyComponent = () => (
+  const renderEmptyComponent = useCallback(() => (
     <View style={styles.emptyContainer}>
       <Ionicons name="list-outline" size={64} color="#CBD5E0" />
       <Text style={styles.emptyText}>{emptyText}</Text>
     </View>
-  );
+  ), [emptyText]);
 
   return (
     <SwipeListView
       data={data}
       renderItem={({ item, index }) => (
-        <View style={styles.itemContainer}>
+        <View style={styles.itemContainer} accessibilityLabel={`List item ${index + 1} of ${data.length}`}>
           {renderItem({ item, index })}
         </View>
       )}
@@ -134,7 +137,7 @@ const SwipeableList: React.FC<SwipeableListProps> = ({
       )}
       leftOpenValue={leftActions.length * 80}
       rightOpenValue={-rightActions.length * 80}
-      keyExtractor={keyExtractor}
+      keyExtractor={memoKeyExtractor}
       onRefresh={onRefresh}
       refreshing={refreshing}
       ListEmptyComponent={renderEmptyComponent}
@@ -143,6 +146,9 @@ const SwipeableList: React.FC<SwipeableListProps> = ({
       swipeToOpenPercent={10}
       swipeToClosePercent={10}
       useNativeDriver={false}
+      initialNumToRender={8}
+      windowSize={10}
+      removeClippedSubviews
     />
   );
 };
@@ -273,4 +279,4 @@ const styles = StyleSheet.create({
   },
 });
 
-export default SwipeableList;
+export default React.memo(SwipeableList);

@@ -175,7 +175,25 @@ export default function App() {
     roundness: 8,
   };
 
-  const theme = colorScheme === 'dark' ? { ...MD3DarkTheme, ...customDark, ds } : { ...DefaultTheme, ...customLight, ds };
+  const typeScaleMultiplier = 1; // could be user preference later
+  const applyTypeScale = (theme: any) => ({
+    ...theme,
+    fonts: {
+      ...theme.fonts,
+    },
+    ds: {
+      ...theme.ds,
+      typography: {
+        ...theme.ds.typography,
+        scale: Object.fromEntries(
+          Object.entries(theme.ds.typography.scale).map(([k,v]: any) => [k, Math.min(v * typeScaleMultiplier, v * 1.35)])
+        ),
+      },
+    },
+  });
+
+  const baseTheme = colorScheme === 'dark' ? { ...MD3DarkTheme, ...customDark, ds } : { ...DefaultTheme, ...customLight, ds };
+  const theme = applyTypeScale(baseTheme);
 
   return (
     <View style={{ flex: 1 }} onLayout={onLayoutRootView}>

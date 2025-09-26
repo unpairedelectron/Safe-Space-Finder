@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, RefreshControl, Share, Alert, useColorScheme, AccessibilityInfo, Animated, Easing } from 'react-native';
+import { View, StyleSheet, ScrollView, RefreshControl, Share, Alert, useColorScheme, AccessibilityInfo, Animated, Easing, useWindowDimensions } from 'react-native';
 import { Searchbar, Button, Card, Title, Paragraph, FAB, Chip, Divider, ActivityIndicator } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SkeletonCard } from '../components/SkeletonCard';
@@ -79,6 +79,7 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   const gradient = useMemo(() => createGradient(colorScheme === 'dark'), [colorScheme]);
   const [reduceMotion, setReduceMotion] = useState(false);
   const [mountedAnim] = useState(new Animated.Value(0));
+  const { fontScale } = useWindowDimensions();
 
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {});
@@ -146,10 +147,13 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
     ],
   }), [mountedAnim, reduceMotion]);
 
+  // Provide dynamic typography scaling guard
+  const scaledH2 = useMemo(() => Math.min(ds.typography.scale.h2 * fontScale, ds.typography.scale.h2 * 1.3), [fontScale]);
+
   return (
     <View style={styles.container}>
       <LinearGradient colors={gradient} style={styles.header} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
-        <Title style={styles.welcomeText} accessibilityRole="header">Find Your Safe Space</Title>
+        <Title style={[styles.welcomeText, { fontSize: scaledH2 }]} accessibilityRole="header">Find Your Safe Space</Title>
         <Searchbar
           placeholder="Search businesses..."
           accessibilityLabel="Search businesses"
