@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { Pressable, Animated, View, StyleSheet } from 'react-native';
+import { Pressable, Animated, View, StyleSheet, AccessibilityProps } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
-interface AnimatedButtonProps {
+interface AnimatedButtonProps extends AccessibilityProps {
   children: React.ReactNode;
   onPress: () => void;
   style?: any;
@@ -13,7 +13,12 @@ export const AnimatedButton: React.FC<AnimatedButtonProps> = ({
   children,
   onPress,
   style,
-  hapticType = 'light'
+  hapticType = 'light',
+  accessibilityLabel,
+  accessibilityHint,
+  accessibilityRole,
+  accessibilityState,
+  ...rest
 }) => {
   const [scaleValue] = useState(new Animated.Value(1));
 
@@ -54,6 +59,11 @@ export const AnimatedButton: React.FC<AnimatedButtonProps> = ({
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       onPress={handlePress}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
+      accessibilityRole={accessibilityRole}
+      accessibilityState={accessibilityState}
+      {...rest}
     >
       <Animated.View
         style={[

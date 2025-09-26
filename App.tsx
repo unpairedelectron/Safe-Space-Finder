@@ -27,6 +27,7 @@ import { persistQueryClient } from '@tanstack/react-query-persist-client';
 import { ActivityIndicator } from 'react-native-paper';
 import { humanizeApiError } from '@/utils/apiError';
 import { useAppSnackbar } from '@/components/SnackbarHost';
+import { ds, createGradient } from '@/theme/designSystem';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
@@ -174,7 +175,7 @@ export default function App() {
     roundness: 8,
   };
 
-  const theme = colorScheme === 'dark' ? { ...MD3DarkTheme, ...customDark } : { ...DefaultTheme, ...customLight };
+  const theme = colorScheme === 'dark' ? { ...MD3DarkTheme, ...customDark, ds } : { ...DefaultTheme, ...customLight, ds };
 
   return (
     <View style={{ flex: 1 }} onLayout={onLayoutRootView}>

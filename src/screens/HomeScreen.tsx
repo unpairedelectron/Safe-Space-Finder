@@ -1,356 +1,235 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, FlatList, ScrollView, RefreshControl, Share, Alert } from 'react-native';
-import { Searchbar, Button, Card, Title, Paragraph, FAB, Chip, Divider } from 'react-native-paper';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { View, StyleSheet, ScrollView, RefreshControl, Share, Alert, useColorScheme, AccessibilityInfo } from 'react-native';
+import { Searchbar, Button, Card, Title, Paragraph, FAB, Chip, Divider, ActivityIndicator } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { SkeletonCard } from '../components/SkeletonCard';
-import { EmptyState } from '../components/EmptyState';
-import SwipeableList, {
-  createLikeAction,
-  createBookmarkAction,
-  createShareAction,
-  SwipeableItemData,
-} from '../components/SwipeableList';
-import { ProgressiveImage, useOptimisticUpdate } from '../components/LoadingOptimizations';
-import { notificationService } from '../services/NotificationService';
+import SwipeableList, { createLikeAction, createBookmarkAction, createShareAction } from '../components/SwipeableList';
 import { AnimatedButton } from '../components/AnimatedButton';
 import { useQuery } from '@tanstack/react-query';
 import { fetchBusinesses } from '../services/api/businessApi';
+import { ds, createGradient } from '@/theme/designSystem';
 
-const mockBusinesses = [
-  { 
-    id: '1', 
-    name: 'Rainbow Cafe', 
-    description: 'LGBTQ+ friendly coffee shop with amazing pastries.',
-    rating: 4.8,
-    category: 'cafes',
-    tags: ['LGBTQ+ Friendly', 'Pet Friendly'],
-  },
-  { 
-    id: '2', 
-    name: 'Inclusive Books', 
-    description: 'Diverse literature and community events.',
-    rating: 4.6,
-    category: 'shops',
-    tags: ['LGBTQ+ Friendly', 'Family Friendly'],
-  },
-  { 
-    id: '3', 
-    name: 'Accessible Eats', 
-    description: 'Fully accessible restaurant with diverse menu.',
-    rating: 4.7,
-    category: 'restaurants',
-    tags: ['Wheelchair Accessible', 'Family Friendly'],
-  },
+interface Business {
+  id: string;
+  name: string;
+  description?: string;
+  rating?: number;
+  category?: string;
+  tags?: string[];
+}
+
+// Fallback mock (used only if API empty) – keep minimal for UX
+const mockFallback: Business[] = [
+  { id: 'mock1', name: 'Rainbow Cafe', description: 'Inclusive coffee & pastries', rating: 4.8, category: 'cafes', tags: ['LGBTQ+ Friendly'] },
+  { id: 'mock2', name: 'Accessible Eats', description: 'Accessible dining experience', rating: 4.7, category: 'restaurants', tags: ['Wheelchair Accessible'] },
 ];
+
+const categories = [
+  { id: 'all', name: 'All', icon: '🌐' },
+  { id: 'restaurants', name: 'Restaurants', icon: '🍽️' },
+  { id: 'cafes', name: 'Cafes', icon: '☕' },
+  { id: 'shops', name: 'Shops', icon: '🛍️' },
+  { id: 'services', name: 'Services', icon: '🔧' },
+  { id: 'entertainment', name: 'Entertainment', icon: '🎭' },
+];
+
+const filters = [
+  'LGBTQ+ Friendly',
+  'Wheelchair Accessible',
+  'Pet Friendly',
+  'Family Friendly',
+  'Women-Owned',
+  'Minority-Owned',
+];
+
+const BusinessCard = React.memo(function BusinessCard({ item, onPress }: { item: { title: string; subtitle?: string; rating?: number; tags?: string[] }; onPress(): void }) {
+  return (
+    <AnimatedButton onPress={onPress} style={styles.businessCard} hapticType="light" accessibilityLabel={`Open details for ${item.title}`} accessibilityHint="Navigates to business detail screen">
+      <Card style={styles.card} mode="elevated">
+        <Card.Content>
+          <View style={styles.cardHeader}>
+            <View style={styles.cardContent}>
+              <Title maxFontSizeMultiplier={1.4}>{item.title}</Title>
+              {item.subtitle && <Paragraph numberOfLines={2}>{item.subtitle}</Paragraph>}
+              <View style={styles.ratingContainer}>
+                {item.rating ? <Paragraph style={styles.rating}>⭐ {item.rating.toFixed(1)}</Paragraph> : <Paragraph accessibilityLabel="No rating yet">No rating</Paragraph>}
+              </View>
+            </View>
+          </View>
+          <View style={styles.tagsContainer}>
+            {item.tags?.slice(0, 3).map((tag, i) => (
+              <Chip key={i} style={styles.tag} accessibilityLabel={`Tag ${tag}`} compact>{tag}</Chip>
+            ))}
+            {item.tags && item.tags.length > 3 && (
+              <Chip style={styles.tag} accessibilityLabel={`Plus ${item.tags.length - 3} more tags`} compact>+{item.tags.length - 3}</Chip>
+            )}
+          </View>
+        </Card.Content>
+      </Card>
+    </AnimatedButton>
+  );
+});
 
 export default function HomeScreen({ navigation }: { navigation: any }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [selectedFilters, setSelectedFilters] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const colorScheme = useColorScheme();
+  const gradient = useMemo(() => createGradient(colorScheme === 'dark'), [colorScheme]);
+  const [reduceMotion, setReduceMotion] = useState(false);
 
-  const { data: apiBusinesses, isLoading: apiLoading, error: apiError, refetch } = useQuery({
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {});
+  }, []);
+
+  const { data: apiBusinesses, isLoading: apiLoading, error: apiError, refetch, isFetching } = useQuery<Business[]>({
     queryKey: ['businesses'],
     queryFn: fetchBusinesses,
-    staleTime: 1000 * 60,
+    staleTime: 60_000,
   });
 
-  const businesses = apiBusinesses || mockBusinesses;
-
-  const categories = [
-    { id: 'all', name: 'All', icon: '🏢' },
-    { id: 'restaurants', name: 'Restaurants', icon: '🍽️' },
-    { id: 'cafes', name: 'Cafes', icon: '☕' },
-    { id: 'shops', name: 'Shops', icon: '🛍️' },
-    { id: 'services', name: 'Services', icon: '🔧' },
-    { id: 'entertainment', name: 'Entertainment', icon: '🎭' },
-  ];
-
-  const filters = [
-    'LGBTQ+ Friendly',
-    'Wheelchair Accessible',
-    'Pet Friendly',
-    'Family Friendly',
-    'Women-Owned',
-    'Minority-Owned',
-  ];
-
-  const filteredBusinesses = businesses.filter((business: any) => {
-    const matchesSearch = business.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (business.description ? business.description.toLowerCase().includes(searchQuery.toLowerCase()) : false);
-    const matchesFilters = selectedFilters.length === 0 ||
-      (business.tags ? selectedFilters.some(filter => business.tags.includes(filter)) : false);
-    return matchesSearch && matchesFilters;
-  });
+  const businesses: Business[] = apiBusinesses && apiBusinesses.length > 0 ? apiBusinesses : mockFallback;
 
   const toggleFilter = (filter: string) => {
-    setSelectedFilters(prev => 
-      prev.includes(filter) 
-        ? prev.filter(f => f !== filter)
-        : [...prev, filter]
-    );
+    setSelectedFilters(prev => prev.includes(filter) ? prev.filter(f => f !== filter) : [...prev, filter]);
   };
 
-  const onRefresh = () => {
+  const handleCategoryPress = (id: string) => setSelectedCategory(id);
+
+  const filteredBusinesses = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return businesses.filter(b => {
+      const matchesSearch = !query || b.name.toLowerCase().includes(query) || (b.description?.toLowerCase().includes(query));
+      const matchesCategory = selectedCategory === 'all' || b.category === selectedCategory;
+      const matchesFilters = selectedFilters.length === 0 || (b.tags && selectedFilters.every(f => b.tags?.includes(f)));
+      return matchesSearch && matchesCategory && matchesFilters;
+    });
+  }, [businesses, searchQuery, selectedCategory, selectedFilters]);
+
+  const onRefresh = useCallback(() => {
     setRefreshing(true);
-    // Simulate a network request
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 2000);
-  };
+    Promise.resolve(refetch()).finally(() => setTimeout(() => setRefreshing(false), 400));
+  }, [refetch]);
 
-  const handleShare = async (business: any) => {
-    try {
-      await Share.share({
-        message: `Check out this business: ${business.name} - ${business.description}`,
-      });
-    } catch (error) {
-      Alert.alert('Error', 'Unable to share the business. Please try again later.');
-    }
+  const handleShare = async (business: Business) => {
+    try { await Share.share({ message: `Check out ${business.name}! ${business.description || ''}`.trim() }); } catch { Alert.alert('Error', 'Unable to share right now.'); }
   };
+  const handleLike = (id: string) => { /* placeholder for future server call */ };
+  const handleBookmark = (id: string) => { /* placeholder for future server call */ };
 
-  const handleLike = (id: string) => {
-    // Handle like action
-    console.log('Liked business with id:', id);
-  };
-
-  const handleBookmark = (id: string) => {
-    // Handle bookmark action
-    console.log('Bookmarked business with id:', id);
-  };
-
-  const renderBusinessCard = (item: any) => (
-    <AnimatedButton
-      onPress={() => navigation.navigate('BusinessDetail', { businessId: item.id })}
-      style={styles.businessCard}
-      hapticType="light"
-    >
-      <Card style={styles.card}>
-        <Card.Content>
-          <View style={styles.cardHeader}>
-            <View style={styles.cardContent}>
-              <Title>{item.title}</Title>
-              <Paragraph>{item.subtitle}</Paragraph>
-              <View style={styles.ratingContainer}>
-                <Paragraph style={styles.rating}>⭐ {item.rating}</Paragraph>
-              </View>
-            </View>
-          </View>
-          <View style={styles.tagsContainer}>
-            {item.tags?.map((tag: string, index: number) => (
-              <Chip key={index} style={styles.tag} compact>
-                {tag}
-              </Chip>
-            ))}
-          </View>
-        </Card.Content>
-      </Card>
-    </AnimatedButton>
-  );
+  const listData = filteredBusinesses.map(b => ({ id: b.id, title: b.name, subtitle: b.description, rating: b.rating, category: b.category, tags: b.tags }));
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={['#4CAF50', '#81C784']}
-        style={styles.header}
-      >
-        <Title style={styles.welcomeText}>Find Your Safe Space</Title>
+      <LinearGradient colors={gradient} style={styles.header} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+        <Title style={styles.welcomeText} accessibilityRole="header">Find Your Safe Space</Title>
         <Searchbar
           placeholder="Search businesses..."
+          accessibilityLabel="Search businesses"
           onChangeText={setSearchQuery}
           value={searchQuery}
           style={styles.searchbar}
           inputStyle={styles.searchInput}
+          autoCorrect={false}
+          returnKeyType="search"
         />
+        {isFetching && <ActivityIndicator animating size="small" style={{ marginTop: 8 }} />}
       </LinearGradient>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesContainer}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesContainer} contentContainerStyle={{ paddingRight: 16 }} accessibilityLabel="Business categories" accessibilityHint="Swipe horizontally to explore categories">
         {categories.map(category => (
           <AnimatedButton
             key={category.id}
-            onPress={() => setSelectedCategory(category.id)}
-            style={[
-              styles.categoryChip,
-              selectedCategory === category.id && styles.selectedCategoryChip,
-            ]}
+            onPress={() => handleCategoryPress(category.id)}
+            style={[styles.categoryChip, selectedCategory === category.id && styles.selectedCategoryChip]}
             hapticType="light"
+            accessibilityRole="button"
+            accessibilityState={{ selected: selectedCategory === category.id }}
+            accessibilityLabel={`${category.name} category`}
           >
             <View style={styles.categoryContent}>
               <Title style={styles.categoryIcon}>{category.icon}</Title>
-              <Paragraph style={[
-                styles.categoryText,
-                selectedCategory === category.id && styles.selectedCategoryText,
-              ]}>
-                {category.name}
-              </Paragraph>
+              <Paragraph style={[styles.categoryText, selectedCategory === category.id && styles.selectedCategoryText]}>{category.name}</Paragraph>
             </View>
           </AnimatedButton>
         ))}
       </ScrollView>
 
-      <View style={styles.filtersContainer}>
+      <View style={styles.filtersContainer} accessibilityLabel="Filter options">
         <Paragraph style={styles.filtersTitle}>Filters:</Paragraph>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {filters.map(filter => (
-            <Chip
-              key={filter}
-              selected={selectedFilters.includes(filter)}
-              onPress={() => toggleFilter(filter)}
-              style={styles.filterChip}
-              textStyle={styles.filterText}
-            >
-              {filter}
-            </Chip>
+            <Chip key={filter} selected={selectedFilters.includes(filter)} onPress={() => toggleFilter(filter)} style={styles.filterChip} textStyle={styles.filterText} accessibilityRole="checkbox" accessibilityState={{ checked: selectedFilters.includes(filter) }} accessibilityLabel={`Filter ${filter}`}>{filter}</Chip>
           ))}
         </ScrollView>
       </View>
 
       <Divider style={styles.divider} />
 
-      <SwipeableList
-        data={filteredBusinesses.map((item: any) => ({
-          id: item.id,
-          title: item.name,
-          subtitle: item.description,
-          rating: item.rating,
-          category: item.category,
-          tags: item.tags || [],
-        }))}
-        renderItem={({ item }) => renderBusinessCard(item as any)}
-        leftActions={[createLikeAction(() => console.log('Like'))]}
-        rightActions={[createBookmarkAction(() => console.log('Bookmark')), createShareAction(() => console.log('Share'))]}
-        refreshing={refreshing || apiLoading}
-        onRefresh={() => { onRefresh(); refetch(); }}
-        emptyText="No businesses found"
-      />
+      {apiError && (
+        <View style={{ paddingHorizontal: 16, paddingBottom: 8 }} accessibilityRole="alert">
+          <Paragraph style={{ color: '#D32F2F' }}>Failed to load latest data. Showing cached / fallback.</Paragraph>
+          <Button mode="text" onPress={() => refetch()} compact>Retry</Button>
+        </View>
+      )}
 
-      <FAB
-        icon="plus"
-        style={styles.fab}
-        onPress={() => navigation.navigate('Businesses')}
-      />
+      <View style={{ paddingHorizontal: 16, paddingBottom: 4 }}>
+        <Paragraph accessibilityLabel={`Found ${listData.length} results`}>{listData.length} result{listData.length === 1 ? '' : 's'}</Paragraph>
+      </View>
+
+      {/* Loading skeleton state */}
+      {apiLoading && !apiBusinesses ? (
+        <View style={{ paddingHorizontal: 16 }}>
+          {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+        </View>
+      ) : (
+        <SwipeableList
+          data={listData}
+          renderItem={({ item }) => (
+            <BusinessCard
+              item={item as any}
+              onPress={() => navigation.navigate('BusinessDetail', { businessId: item.id })}
+            />
+          )}
+          leftActions={[createLikeAction(() => handleLike('temp'))]}
+          rightActions={[createBookmarkAction(() => handleBookmark('temp')), createShareAction(() => handleShare({ id: 'temp', name: 'Business' } as any))]}
+          refreshing={refreshing || apiLoading}
+          onRefresh={onRefresh}
+          emptyText="No businesses match your criteria"
+        />
+      )}
+
+      <FAB icon="plus" style={styles.fab} onPress={() => navigation.navigate('Businesses')} accessibilityLabel="Open full business list" />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-  },
-  header: {
-    padding: 20,
-    paddingTop: 40,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-  },
-  welcomeText: {
-    color: 'white',
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  searchbar: {
-    elevation: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-  },
-  searchInput: {
-    fontSize: 16,
-  },
-  categoriesContainer: {
-    padding: 16,
-    paddingBottom: 8,
-  },
-  categoryChip: {
-    marginRight: 12,
-    backgroundColor: 'white',
-    borderRadius: 20,
-    padding: 12,
-    elevation: 2,
-    minWidth: 80,
-  },
-  selectedCategoryChip: {
-    backgroundColor: '#4CAF50',
-  },
-  categoryContent: {
-    alignItems: 'center',
-  },
-  categoryIcon: {
-    fontSize: 20,
-    marginBottom: 4,
-  },
-  categoryText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#666',
-  },
-  selectedCategoryText: {
-    color: 'white',
-  },
-  filtersContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-  },
-  filtersTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 8,
-    color: '#333',
-  },
-  filterChip: {
-    marginRight: 8,
-  },
-  filterText: {
-    fontSize: 12,
-  },
-  divider: {
-    marginVertical: 8,
-  },
-  businessCard: {
-    marginHorizontal: 16,
-    marginVertical: 6,
-  },
-  card: {
-    elevation: 3,
-    borderRadius: 12,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  cardContent: {
-    flex: 1,
-  },
-  ratingContainer: {
-    marginTop: 4,
-  },
-  rating: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FF9800',
-  },
-  tagsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 12,
-  },
-  tag: {
-    marginRight: 8,
-    marginBottom: 4,
-  },
-  emptyContainer: {
-    padding: 32,
-    alignItems: 'center',
-  },
-  fab: {
-    position: 'absolute',
-    margin: 16,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#4CAF50',
-  },
+  container: { flex: 1, backgroundColor: ds.palette.bgLight },
+  header: { padding: ds.spacing(5), paddingTop: ds.spacing(11), borderBottomLeftRadius: ds.radii.lg, borderBottomRightRadius: ds.radii.lg },
+  welcomeText: { color: 'white', fontSize: ds.typography.scale.h2, fontWeight: 'bold', marginBottom: ds.spacing(4), textAlign: 'center' },
+  searchbar: { elevation: 4, backgroundColor: 'rgba(255,255,255,0.95)' },
+  searchInput: { fontSize: 16 },
+  categoriesContainer: { padding: ds.spacing(4), paddingBottom: ds.spacing(2) },
+  categoryChip: { marginRight: ds.spacing(3), backgroundColor: 'white', borderRadius: ds.radii.lg, padding: ds.spacing(3), elevation: 2, minWidth: 90 },
+  selectedCategoryChip: { backgroundColor: ds.palette.primary },
+  categoryContent: { alignItems: 'center' },
+  categoryIcon: { fontSize: 20, marginBottom: 4 },
+  categoryText: { fontSize: 12, fontWeight: '600', color: '#555' },
+  selectedCategoryText: { color: 'white' },
+  filtersContainer: { paddingHorizontal: ds.spacing(4), paddingBottom: ds.spacing(2) },
+  filtersTitle: { fontSize: 16, fontWeight: '600', marginBottom: ds.spacing(2), color: '#333' },
+  filterChip: { marginRight: ds.spacing(2) },
+  filterText: { fontSize: 12 },
+  divider: { marginVertical: ds.spacing(2) },
+  businessCard: { marginHorizontal: ds.spacing(4), marginVertical: ds.spacing(1.5) },
+  card: { elevation: 3, borderRadius: ds.radii.md },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  cardContent: { flex: 1 },
+  ratingContainer: { marginTop: ds.spacing(1) },
+  rating: { fontSize: 16, fontWeight: '600', color: ds.palette.accent },
+  tagsContainer: { flexDirection: 'row', flexWrap: 'wrap', marginTop: ds.spacing(3) },
+  tag: { marginRight: ds.spacing(2), marginBottom: ds.spacing(1) },
+  fab: { position: 'absolute', margin: ds.spacing(4), right: 0, bottom: 0, backgroundColor: ds.palette.primary },
 });

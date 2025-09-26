@@ -4,7 +4,10 @@ import { TextInput, Button, Card, Title, Appbar, Divider } from 'react-native-pa
 import * as ImagePicker from 'expo-image-picker';
 import { StarRating } from '../components/StarRating';
 import { TagSelector } from '../components/AccessibilityTags';
-import axios from 'axios';
+import { createReview } from '@/services/api/businessApi';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAppSnackbar } from '@/components/SnackbarHost';
+import { humanizeApiError } from '@/utils/apiError';
 
 const API_BASE = 'http://localhost:3000/api';
 
@@ -14,7 +17,23 @@ export default function ReviewScreen({ route, navigation }: { route: any; naviga
   const [comment, setComment] = useState('');
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [images, setImages] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
+  const snackbar = useAppSnackbar();
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      return createReview(businessId, rating, comment.trim(), {
+        tags: selectedTags,
+        images: images.map((uri, i) => ({ uri, name: `photo_${i}.jpg` })),
+      });
+    },
+    onSuccess: () => {
+      snackbar.show('Review submitted');
+      queryClient.invalidateQueries({ queryKey: ['businessReviews', businessId] });
+      navigation.goBack();
+    },
+    onError: (err) => snackbar.show(humanizeApiError(err)),
+  });
 
   const pickImages = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -27,85 +46,37 @@ export default function ReviewScreen({ route, navigation }: { route: any; naviga
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsMultipleSelection: true,
       selectionLimit: 5,
-      allowsEditing: false,
-      aspect: [4, 3],
       quality: 0.8,
     });
 
     if (!result.canceled) {
-      const newImages = result.assets.map(asset => asset.uri);
-      setImages(prev => [...prev, ...newImages].slice(0, 5)); // Max 5 images
+      const newImages = result.assets.map(a => a.uri);
+      setImages(prev => [...prev, ...newImages].slice(0, 5));
     }
   };
 
-  const removeImage = (index: number) => {
-    setImages(prev => prev.filter((_, i) => i !== index));
-  };
+  const removeImage = (index: number) => setImages(prev => prev.filter((_, i) => i !== index));
 
-  const submitReview = async () => {
-    if (rating === 0) {
-      Alert.alert('Error', 'Please provide a rating');
-      return;
-    }
-    if (!comment.trim()) {
-      Alert.alert('Error', 'Please write a comment');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const formData = new FormData();
-      formData.append('businessId', businessId);
-      formData.append('rating', rating.toString());
-      formData.append('comment', comment);
-      formData.append('tags', JSON.stringify(selectedTags));
-      
-      images.forEach((image, index) => {
-        const filename = image.split('/').pop();
-        const match = /\.(\w+)$/.exec(filename || '');
-        const type = match ? `image/${match[1]}` : 'image';
-        formData.append(`photo_${index}`, {
-          uri: image,
-          name: filename,
-          type,
-        } as any);
-      });
-
-      await axios.post(`${API_BASE}/reviews`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      
-      Alert.alert('Success', 'Review submitted successfully!', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to submit review');
-    }
-    setLoading(false);
+  const submitReview = () => {
+    if (rating === 0) { Alert.alert('Error', 'Please provide a rating'); return; }
+    if (!comment.trim()) { Alert.alert('Error', 'Please write a comment'); return; }
+    mutation.mutate();
   };
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
       <Appbar.Header>
         <Appbar.BackAction onPress={() => navigation.goBack()} />
         <Appbar.Content title="Add Review" />
       </Appbar.Header>
 
-      <Card style={styles.card}>
+      <Card style={styles.card} accessibilityLabel="Add a review">
         <Card.Content>
           <Title style={styles.sectionTitle}>Rate Your Experience</Title>
           <View style={styles.ratingContainer}>
-            <StarRating
-              rating={rating}
-              onRatingChange={setRating}
-              size={40}
-              interactive={true}
-              showLabel={true}
-            />
+            <StarRating rating={rating} onRatingChange={setRating} size={40} interactive showLabel />
           </View>
-
           <Divider style={styles.divider} />
-
           <Title style={styles.sectionTitle}>Write Your Review</Title>
           <TextInput
             label="Share your experience..."
@@ -116,10 +87,9 @@ export default function ReviewScreen({ route, navigation }: { route: any; naviga
             numberOfLines={5}
             style={styles.textInput}
             placeholder="Tell others about your experience at this business. Was it welcoming? Accessible? What made it special?"
+            accessibilityLabel="Review comment input"
           />
-
           <Divider style={styles.divider} />
-
           <Title style={styles.sectionTitle}>Add Photos (Optional)</Title>
           <Button
             mode="outlined"
@@ -129,9 +99,8 @@ export default function ReviewScreen({ route, navigation }: { route: any; naviga
           >
             {images.length === 0 ? 'Add Photos' : `Add More Photos (${images.length}/5)`}
           </Button>
-
           {images.length > 0 && (
-            <View style={styles.imagePreview}>
+            <View style={styles.imagePreview} accessibilityLabel="Selected photos">
               {images.map((image, index) => (
                 <View key={index} style={styles.imageContainer}>
                   <Image source={{ uri: image }} style={styles.previewImage} />
@@ -141,6 +110,7 @@ export default function ReviewScreen({ route, navigation }: { route: any; naviga
                     onPress={() => removeImage(index)}
                     style={styles.removeButton}
                     buttonColor="#FF5722"
+                    accessibilityLabel={`Remove photo ${index + 1}`}
                   >
                     ×
                   </Button>
@@ -148,22 +118,21 @@ export default function ReviewScreen({ route, navigation }: { route: any; naviga
               ))}
             </View>
           )}
-
           <Divider style={styles.divider} />
-
           <Title style={styles.sectionTitle}>Accessibility Features (Optional)</Title>
           <TagSelector
             selectedTags={selectedTags}
             onSelectionChange={setSelectedTags}
             categories={['accessibility', 'identity']}
           />
-
           <Button
             mode="contained"
             onPress={submitReview}
-            loading={loading}
+            loading={mutation.isPending}
+            disabled={mutation.isPending}
             style={styles.submitButton}
             contentStyle={styles.submitButtonContent}
+            accessibilityLabel="Submit review"
           >
             Submit Review
           </Button>

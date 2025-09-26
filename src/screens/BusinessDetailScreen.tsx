@@ -1,160 +1,178 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, FlatList, Alert, ScrollView } from 'react-native';
+import { View, StyleSheet, FlatList, Alert, ScrollView, useColorScheme, AccessibilityInfo } from 'react-native';
 import { LayoutAnimation } from 'react-native';
-import { Card, Title, Paragraph, Button, ActivityIndicator, Chip, Appbar, Divider } from 'react-native-paper';
+import { Card, Title, Paragraph, Button, ActivityIndicator, Divider } from 'react-native-paper';
 import { PhotoGallery } from '../components/PhotoGallery';
-import { StarRating, RatingDisplay } from '../components/StarRating';
+import { RatingDisplay } from '../components/StarRating';
 import { AccessibilityTags } from '../components/AccessibilityTags';
 import { SocialActions, UserProfileBadge, LikeButton } from '../components/SocialFeatures';
 import { notificationService } from '../services/NotificationService';
-import { ProgressiveImage } from '../components/LoadingOptimizations';
-import { fetchBusiness as apiFetchBusiness } from '@/services/api/businessApi';
+import { fetchBusiness as apiFetchBusiness, fetchBusinessReviews, likeReview, toggleFavoriteBusiness, ReviewDTO } from '@/services/api/businessApi';
 import OfflineManager from '@/services/OfflineManager';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAppSnackbar } from '@/components/SnackbarHost';
+import { humanizeApiError } from '@/utils/apiError';
+import { ds } from '@/theme/designSystem';
 
 // API integration WIP: will replace mock data with real fetch using businessApi
 export default function BusinessDetailScreen({ route, navigation }: { route: any; navigation: any }) {
   const { businessId } = route.params;
-  const [business, setBusiness] = useState<any>(null);
-  const [reviews, setReviews] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const offline = OfflineManager.getInstance();
+  const snackbar = useAppSnackbar();
+  const queryClient = useQueryClient();
+  const colorScheme = useColorScheme();
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  useEffect(() => { AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {}); }, []);
+
   const [isFavorited, setIsFavorited] = useState(false);
   const [isFollowed, setIsFollowed] = useState(false);
-  const offline = OfflineManager.getInstance();
 
-  useEffect(() => {
-    loadBusiness();
-    fetchReviews();
-  }, []);
+  // Business details query
+  const { data: business, isLoading: businessLoading, isError: businessError } = useQuery({
+    queryKey: ['business', businessId],
+    queryFn: () => apiFetchBusiness(businessId),
+    staleTime: 1000 * 60,
+  });
 
-  const loadBusiness = async () => {
-    try {
-      const data = await apiFetchBusiness(businessId);
-      setBusiness({ ...data, photos: data?.imageUrl ? [data.imageUrl] : [], tags: [] });
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    } catch (error) {
-      Alert.alert('Error', 'Failed to load business');
-    }
-  };
+  // Reviews infinite query
+  const {
+    data: reviewsPages,
+    isLoading: reviewsLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery<{ items: ReviewDTO[]; nextPage?: number }>({
+    queryKey: ['businessReviews', businessId],
+    queryFn: ({ pageParam = 1 }) => fetchBusinessReviews(businessId, pageParam as number),
+    getNextPageParam: (last) => last.nextPage ?? undefined,
+    initialPageParam: 1,
+    staleTime: 30_000,
+  });
 
-  const fetchReviews = async () => {
-    try {
-      setReviews([]); // TODO: integrate real reviews API
-      LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    } catch {}
-    setLoading(false);
+  const reviews: ReviewDTO[] = reviewsPages?.pages.flatMap((p) => p.items) || [];
+
+  // Like review mutation (optimistic)
+  const likeMutation = useMutation({
+    mutationFn: (review: ReviewDTO) => likeReview(review.id),
+    onMutate: async (review) => {
+      await queryClient.cancelQueries({ queryKey: ['businessReviews', businessId] });
+      const prev = queryClient.getQueryData<any>(['businessReviews', businessId]);
+      queryClient.setQueryData(['businessReviews', businessId], (data: any) => {
+        if (!data) return data;
+        return {
+          ...data,
+          pages: data.pages.map((pg: any) => ({
+            ...pg,
+            items: pg.items.map((r: ReviewDTO) => r.id === review.id ? { ...r, isLiked: !r.isLiked, likes: (r.likes || 0) + (r.isLiked ? -1 : 1) } : r)
+          })),
+        };
+      });
+      return { prev };
+    },
+    onError: (_err, _review, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(['businessReviews', businessId], ctx.prev);
+      snackbar.show('Failed to like review');
+    },
+    onSuccess: (resp, review) => {
+      // Sync likes exactly with server response
+      queryClient.setQueryData(['businessReviews', businessId], (data: any) => {
+        if (!data) return data;
+        return {
+          ...data,
+            pages: data.pages.map((pg: any) => ({
+              ...pg,
+              items: pg.items.map((r: ReviewDTO) => r.id === review.id ? { ...r, isLiked: resp.liked, likes: resp.likes } : r)
+            })),
+        };
+      });
+    },
+  });
+
+  const handleReviewLike = (reviewId: string) => {
+    const target = reviews.find(r => r.id === reviewId);
+    if (target) likeMutation.mutate(target);
   };
 
   const handleFavorite = async () => {
-    const newVal = !isFavorited;
-    setIsFavorited(newVal);
-    if (newVal && business) {
-      await offline.addFavorite(businessId);
-      await notificationService.scheduleReviewReminder(businessId, business.name);
-      await notificationService.sendLocalNotification({
-        title: `Added to favorites!`,
-        body: `${business.name} has been added to your favorites.`,
-        data: { businessId },
-        priority: 'default',
-      });
-    } else if (!newVal) {
-      await offline.removeFavorite(businessId);
+    const next = !isFavorited;
+    setIsFavorited(next);
+    try {
+      // Optimistic toggle to backend
+      await toggleFavoriteBusiness(businessId);
+    } catch (e) {
+      setIsFavorited(!next); // revert
+      snackbar.show('Failed to update favorite');
     }
+    try {
+      if (next && business) {
+        await offline.addFavorite(businessId);
+        await notificationService.scheduleReviewReminder(businessId, business.name);
+        await notificationService.sendLocalNotification({
+          title: 'Added to favorites!',
+          body: `${business.name} has been added to your favorites.`,
+          data: { businessId },
+          priority: 'default',
+        });
+      } else if (!next) {
+        await offline.removeFavorite(businessId);
+      }
+    } catch {}
   };
 
-  const handleFollow = () => {
-    setIsFollowed(!isFollowed);
-  };
+  const handleFollow = () => { setIsFollowed(f => !f); };
 
-  const handleReviewLike = (reviewId: string) => {
-    setReviews(prev => 
-      prev.map((review: any) => 
-        review.id === reviewId 
-          ? { 
-              ...review, 
-              isLiked: !review.isLiked,
-              likes: review.isLiked ? review.likes - 1 : review.likes + 1 
-            }
-          : review
-      )
-    );
-  };
+  useEffect(() => {
+    if (businessError) snackbar.show('Failed to load business');
+  }, [businessError, snackbar]);
+
+  const loading = businessLoading || reviewsLoading;
 
   if (loading) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator animating={true} size="large" />
+      <View style={styles.center} accessibilityRole="progressbar" accessibilityLabel="Loading business details">
+        <ActivityIndicator animating size="large" />
+        <Paragraph style={{ marginTop: ds.spacing(3) }}>Loading...</Paragraph>
       </View>
     );
   }
 
   if (!business) {
     return (
-      <View style={styles.center}>
+      <View style={styles.center} accessibilityRole="alert">
         <Paragraph>Business not found.</Paragraph>
+        <Button onPress={() => queryClient.invalidateQueries({ queryKey: ['business', businessId] })}>Retry</Button>
       </View>
     );
   }
 
-  const renderReview = ({ item }: any) => (
-    <Card style={styles.reviewCard}>
+  const renderReview = ({ item }: { item: ReviewDTO }) => (
+    <Card style={styles.reviewCard} accessibilityLabel={`Review by ${item.userName}`}>
       <Card.Content>
-        <UserProfileBadge
-          userName={item.userName}
-          isVerified={item.isVerified}
-          reviewCount={item.reviewCount}
-        />
+        <UserProfileBadge userName={item.userName} isVerified={false} reviewCount={0} />
         <View style={styles.reviewHeader}>
           <RatingDisplay rating={item.rating} size={18} />
         </View>
         <Paragraph style={styles.reviewComment}>{item.comment}</Paragraph>
-        {item.photos.length > 0 && (
-          <PhotoGallery photos={item.photos} />
-        )}
         <View style={styles.reviewActions}>
-          <LikeButton
-            isLiked={item.isLiked}
-            likeCount={item.likes}
-            onPress={() => handleReviewLike(item.id)}
-            size="small"
-          />
+          <LikeButton isLiked={!!item.isLiked} likeCount={item.likes || 0} onPress={() => handleReviewLike(item.id)} size="small" />
         </View>
       </Card.Content>
     </Card>
   );
 
   return (
-    <ScrollView style={styles.container}>
-      <Appbar.Header>
-        <Appbar.BackAction onPress={() => navigation.goBack()} />
-        <Appbar.Content title={business.name} />
-      </Appbar.Header>
-
-      {business.photos && business.photos.length > 0 && (
-        <PhotoGallery photos={business.photos} />
-      )}
-
-      <Card style={styles.businessCard}>
+    <ScrollView style={styles.container} accessibilityLabel={`Details for ${business.name}`}>
+      {/* Header */}
+      <Card style={styles.businessCard} accessibilityRole="summary">
         <Card.Content>
           <Title style={styles.businessName}>{business.name}</Title>
-          <RatingDisplay rating={business.rating} size={20} showValue={true} />
-          <Paragraph style={styles.address}>{business.address}</Paragraph>
-          <Paragraph style={styles.description}>{business.description}</Paragraph>
-          
+          <RatingDisplay rating={business.rating} size={20} showValue />
+          {business.address && <Paragraph style={styles.address}>{business.address}</Paragraph>}
+          {business.description && <Paragraph style={styles.description}>{business.description}</Paragraph>}
           <Divider style={styles.divider} />
-          
-          <AccessibilityTags
-            selectedTags={business.tags}
-            maxVisible={4}
-          />
-          
+          <AccessibilityTags selectedTags={[]} maxVisible={4} />
           <Divider style={styles.divider} />
-          
-          <View style={styles.businessInfo}>
-            <Paragraph style={styles.infoLabel}>Hours:</Paragraph>
-            <Paragraph>{business.hours}</Paragraph>
-            <Paragraph style={styles.infoLabel}>Phone:</Paragraph>
-            <Paragraph>{business.phone}</Paragraph>
-          </View>
         </Card.Content>
       </Card>
 
@@ -171,10 +189,23 @@ export default function BusinessDetailScreen({ route, navigation }: { route: any
         <Title style={styles.sectionTitle}>Reviews ({reviews.length})</Title>
         <FlatList
           data={reviews}
-          keyExtractor={(item: any) => item.id.toString()}
+          keyExtractor={(item) => item.id}
           renderItem={renderReview}
           scrollEnabled={false}
           ListEmptyComponent={<Paragraph>No reviews yet.</Paragraph>}
+          ListFooterComponent={
+            hasNextPage ? (
+              <Button
+                mode="outlined"
+                onPress={() => fetchNextPage()}
+                loading={isFetchingNextPage}
+                accessibilityLabel="Load more reviews"
+                style={{ marginTop: 8 }}
+              >
+                {isFetchingNextPage ? 'Loading…' : 'Load More'}
+              </Button>
+            ) : null
+          }
         />
       </View>
 
@@ -183,6 +214,7 @@ export default function BusinessDetailScreen({ route, navigation }: { route: any
         onPress={() => navigation.navigate('Review', { businessId })}
         style={styles.addReviewButton}
         contentStyle={styles.buttonContent}
+        accessibilityLabel="Add a review"
       >
         Add Review
       </Button>
@@ -191,73 +223,21 @@ export default function BusinessDetailScreen({ route, navigation }: { route: any
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FAFAFA',
-  },
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  businessCard: {
-    margin: 16,
-    elevation: 4,
-    borderRadius: 12,
-  },
-  businessName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  address: {
-    color: '#666',
-    marginVertical: 8,
-  },
-  description: {
-    lineHeight: 22,
-    marginVertical: 12,
-  },
-  divider: {
-    marginVertical: 16,
-  },
-  businessInfo: {
-    marginTop: 8,
-  },
-  infoLabel: {
-    fontWeight: '600',
-    marginTop: 8,
-    color: '#333',
-  },
-  reviewsSection: {
-    margin: 16,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginBottom: 16,
-  },
-  reviewCard: {
-    marginBottom: 12,
-    elevation: 2,
-    borderRadius: 8,
-  },
-  reviewHeader: {
-    marginVertical: 8,
-  },
-  reviewComment: {
-    lineHeight: 20,
-    marginVertical: 8,
-  },
-  reviewActions: {
-    marginTop: 12,
-    alignItems: 'flex-start',
-  },
-  addReviewButton: {
-    margin: 16,
-    elevation: 4,
-  },
-  buttonContent: {
-    paddingVertical: 8,
-  },
+  container: { flex: 1, backgroundColor: ds.palette.bgLight },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: ds.spacing(4) },
+  businessCard: { margin: ds.spacing(4), elevation: 4, borderRadius: ds.radii.md },
+  businessName: { fontSize: 24, fontWeight: 'bold', marginBottom: ds.spacing(2) },
+  address: { color: '#666', marginVertical: ds.spacing(2) },
+  description: { lineHeight: 22, marginVertical: ds.spacing(3) },
+  divider: { marginVertical: ds.spacing(4) },
+  businessInfo: { marginTop: ds.spacing(2) },
+  infoLabel: { fontWeight: '600', marginTop: ds.spacing(2), color: '#333' },
+  reviewsSection: { margin: ds.spacing(4) },
+  sectionTitle: { fontSize: 20, fontWeight: 'bold', marginBottom: ds.spacing(4) },
+  reviewCard: { marginBottom: ds.spacing(3), elevation: 2, borderRadius: ds.radii.sm },
+  reviewHeader: { marginVertical: ds.spacing(2) },
+  reviewComment: { lineHeight: 20, marginVertical: ds.spacing(2) },
+  reviewActions: { marginTop: ds.spacing(3), alignItems: 'flex-start' },
+  addReviewButton: { margin: ds.spacing(4), elevation: 4 },
+  buttonContent: { paddingVertical: ds.spacing(2) },
 });

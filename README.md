@@ -122,6 +122,25 @@ Implemented with `SwipeableList` component wrapping `react-native-swipe-list-vie
 
 These were prioritized as essential for a stable public release baseline.
 
+## Design System
+A lightweight token set powers consistent spacing, radius, color, and typography values (see `src/theme/designSystem.ts`).
+
+Tokens:
+- Spacing: 4pt modular scale via spacing(n)
+- Radii: xs/sm/md/lg/pill
+- Palette: semantic colors (primary, accent, danger, surface, background, text variants)
+- Typography scale: h1–small
+- Shadows: light & medium presets
+
+Applied to: Home screen, Business detail, global theme injection.
+
+Recent polish additions:
+- Central design tokens injected into Paper theme
+- Dark mode gradient logic
+- Reduced motion respect (prefetch for transitions)
+- Accessible labels on interactive components
+- Business detail + home screen refactor with memoization and result metadata
+
 ## Contributing
 1. Create feature branch: `git checkout -b feat/your-feature`
 2. Commit with conventional message style: `feat: add X`, `fix: correct Y`
