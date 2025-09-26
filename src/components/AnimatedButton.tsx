@@ -85,6 +85,10 @@ export const AnimatedButton: React.FC<AnimatedButtonProps> = ({
       accessibilityHint={accessibilityHint}
       accessibilityRole={accessibilityRole}
       accessibilityState={accessibilityState}
+      style={(state) => [
+        typeof style === 'function' ? style(state) : style,
+        elevationStyle,
+      ]}
       {...rest}
     >
       <Animated.View
@@ -108,5 +112,9 @@ const styles = StyleSheet.create({
   lightReduced: {
     backgroundColor: 'rgba(0,0,0,0.04)',
     borderRadius: ds.radii.sm,
+  },
+  focusRing: { // retained for potential web usage
+    borderWidth: 2,
+    borderColor: ds.palette.accent,
   },
 });

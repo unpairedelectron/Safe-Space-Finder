@@ -9,7 +9,8 @@
     "web": "expo start --web",
     "test": "jest",
     "test:watch": "jest --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint:a11y": "echo 'Run custom accessibility checks (placeholder)'"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
