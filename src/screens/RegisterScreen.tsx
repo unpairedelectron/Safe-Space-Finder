@@ -5,6 +5,7 @@ import { Formik, Field } from 'formik';
 import * as Yup from 'yup';
 import { ValidatedTextInput, PasswordStrength } from '../components/ValidatedInput';
 import { useAuth } from '@/state/auth/AuthContext';
+import { sanitizeInput } from '@/utils/sanitize';
 
 const registrationSchema = Yup.object().shape({
   name: Yup.string()
@@ -33,7 +34,10 @@ export default function RegisterScreen({ navigation }: { navigation: any }) {
   const handleRegister = async (values: any) => {
     setLoading(true);
     try {
-      await register(values.name, values.email, values.password);
+      const name = sanitizeInput(values.name);
+      const email = sanitizeInput(values.email);
+      const password = values.password; // keep as entered
+      await register(name, email.trim(), password);
       // Auth context switches navigation to Home
     } catch (error: any) {
       Alert.alert('Error', error?.message || 'Registration failed. Please try again.');

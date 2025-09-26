@@ -8,6 +8,8 @@ import { AccessibilityTags } from '../components/AccessibilityTags';
 import { SocialActions, UserProfileBadge, LikeButton } from '../components/SocialFeatures';
 import { notificationService } from '../services/NotificationService';
 import { ProgressiveImage } from '../components/LoadingOptimizations';
+import { fetchBusiness as apiFetchBusiness } from '@/services/api/businessApi';
+import OfflineManager from '@/services/OfflineManager';
 
 // API integration WIP: will replace mock data with real fetch using businessApi
 export default function BusinessDetailScreen({ route, navigation }: { route: any; navigation: any }) {
@@ -17,58 +19,17 @@ export default function BusinessDetailScreen({ route, navigation }: { route: any
   const [loading, setLoading] = useState(true);
   const [isFavorited, setIsFavorited] = useState(false);
   const [isFollowed, setIsFollowed] = useState(false);
-
-  // Mock data for demonstration
-  const mockBusiness = {
-    id: businessId,
-    name: 'Rainbow Cafe',
-    description: 'A welcoming LGBTQ+ friendly coffee shop with amazing pastries and a cozy atmosphere. We pride ourselves on being a safe space for everyone.',
-    address: '123 Inclusive Street, Diversity City, DC 12345',
-    rating: 4.8,
-    photos: [
-      'https://images.unsplash.com/photo-1554118811-1e0d58224f24',
-      'https://images.unsplash.com/photo-1501339847302-ac426a4a7cbb',
-      'https://images.unsplash.com/photo-1559925393-8be0ec4767c8',
-    ],
-    tags: ['lgbtq', 'wheelchair', 'pet-friendly', 'women-owned'],
-    hours: '7:00 AM - 9:00 PM',
-    phone: '(555) 123-4567',
-  };
-
-  const mockReviews = [
-    {
-      id: '1',
-      rating: 5,
-      comment: 'Amazing place! The staff is so welcoming and the coffee is fantastic. Truly feels like a safe space.',
-      userName: 'Alex Smith',
-      isVerified: true,
-      reviewCount: 23,
-      likes: 12,
-      isLiked: false,
-      photos: ['https://images.unsplash.com/photo-1509042239860-f550ce710b93'],
-    },
-    {
-      id: '2',
-      rating: 4,
-      comment: 'Great atmosphere and very inclusive. The only downside is it can get quite busy during peak hours.',
-      userName: 'Jordan Lee',
-      isVerified: false,
-      reviewCount: 7,
-      likes: 8,
-      isLiked: true,
-      photos: [],
-    },
-  ];
+  const offline = OfflineManager.getInstance();
 
   useEffect(() => {
-    fetchBusiness();
+    loadBusiness();
     fetchReviews();
   }, []);
 
-  const fetchBusiness = async () => {
+  const loadBusiness = async () => {
     try {
-      // Use mock data for now
-      setBusiness(mockBusiness);
+      const data = await apiFetchBusiness(businessId);
+      setBusiness({ ...data, photos: data?.imageUrl ? [data.imageUrl] : [], tags: [] });
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     } catch (error) {
       Alert.alert('Error', 'Failed to load business');
@@ -77,28 +38,26 @@ export default function BusinessDetailScreen({ route, navigation }: { route: any
 
   const fetchReviews = async () => {
     try {
-      // Use mock data for now
-      setReviews(mockReviews);
+      setReviews([]); // TODO: integrate real reviews API
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    } catch (error) {
-      // Reviews might not exist yet
-    }
+    } catch {}
     setLoading(false);
   };
 
   const handleFavorite = async () => {
-    setIsFavorited(!isFavorited);
-    if (!isFavorited && business) {
-      // Schedule a review reminder notification for 24 hours later
+    const newVal = !isFavorited;
+    setIsFavorited(newVal);
+    if (newVal && business) {
+      await offline.addFavorite(businessId);
       await notificationService.scheduleReviewReminder(businessId, business.name);
-      
-      // Show immediate confirmation
       await notificationService.sendLocalNotification({
         title: `Added to favorites!`,
         body: `${business.name} has been added to your favorites.`,
         data: { businessId },
         priority: 'default',
       });
+    } else if (!newVal) {
+      await offline.removeFavorite(businessId);
     }
   };
 
@@ -209,7 +168,7 @@ export default function BusinessDetailScreen({ route, navigation }: { route: any
       />
 
       <View style={styles.reviewsSection}>
-        <Title style={styles.sectionTitle}>Reviews ({mockReviews.length})</Title>
+        <Title style={styles.sectionTitle}>Reviews ({reviews.length})</Title>
         <FlatList
           data={reviews}
           keyExtractor={(item: any) => item.id.toString()}

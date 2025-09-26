@@ -19,16 +19,42 @@ import { AuthProvider, useAuth } from '@/state/auth/AuthContext';
 import { GlobalErrorBoundary } from '@/components/GlobalErrorBoundary';
 import { SnackbarProvider } from '@/components/SnackbarHost';
 import { NetworkStatusBanner } from '@/components/NetworkStatusBanner';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { focusManager } from '@tanstack/react-query';
+import NetInfo from '@react-native-community/netinfo';
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
+import { persistQueryClient } from '@tanstack/react-query-persist-client';
+import { ActivityIndicator } from 'react-native-paper';
+import { humanizeApiError } from '@/utils/apiError';
+import { useAppSnackbar } from '@/components/SnackbarHost';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
 
 const Stack = createStackNavigator();
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 2,
+      staleTime: 60_000,
+      gcTime: 1000 * 60 * 60,
+    },
+  },
+});
+
+const asyncStoragePersister = createAsyncStoragePersister({ storage: AsyncStorage });
+// Persist query cache
+persistQueryClient({ queryClient, persister: asyncStoragePersister, maxAge: 1000 * 60 * 60 * 24 });
 
 function RootNavigator() {
   const { user, isInitializing } = useAuth();
-  if (isInitializing) return null;
+  if (isInitializing) {
+    return (
+      <View style={{ flex:1, justifyContent:'center', alignItems:'center' }} accessibilityRole="progressbar" accessibilityLabel="Loading application">
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
   return (
     <Stack.Navigator initialRouteName={user ? 'Home' : 'Onboarding'}>
       {!user && (
@@ -48,6 +74,28 @@ function RootNavigator() {
       )}
     </Stack.Navigator>
   );
+}
+
+// Network -> React Query focus management
+NetInfo.addEventListener(state => {
+  focusManager.setFocused(!!state.isConnected);
+});
+
+function GlobalApiErrorBoundary({ children }: { children: React.ReactNode }) {
+  const snackbar = useAppSnackbar();
+  useEffect(() => {
+    const unsub = queryClient.getQueryCache().subscribe(event => {
+      // React Query cache events use specific type union; check for updated
+      if (event?.type === 'updated') {
+        const q: any = (event as any).query;
+        if (q && q.state?.status === 'error' && q.state?.error) {
+          snackbar.show(humanizeApiError(q.state.error));
+        }
+      }
+    });
+    return () => { unsub(); };
+  }, [snackbar]);
+  return <>{children}</>;
 }
 
 export default function App() {
@@ -135,6 +183,7 @@ export default function App() {
           <AuthProvider>
             <GlobalErrorBoundary>
             <SnackbarProvider>
+            <GlobalApiErrorBoundary>
             <NetworkStatusBanner />
         <NavigationContainer
           linking={{
@@ -154,6 +203,7 @@ export default function App() {
         >
           <RootNavigator />
         </NavigationContainer>
+            </GlobalApiErrorBoundary>
             </SnackbarProvider>
             </GlobalErrorBoundary>
           </AuthProvider>

@@ -6,6 +6,7 @@ import { Formik, Field } from 'formik';
 import * as Yup from 'yup';
 import { ValidatedTextInput } from '../components/ValidatedInput';
 import { useAuth } from '@/state/auth/AuthContext';
+import { sanitizeInput } from '@/utils/sanitize';
 
 const loginSchema = Yup.object().shape({
   email: Yup.string()
@@ -23,7 +24,9 @@ export default function LoginScreen({ navigation }: { navigation: any }) {
   const handleLogin = async (values: { email: string; password: string }) => {
     setLoading(true);
     try {
-      await login(values.email, values.password);
+      const email = sanitizeInput(values.email);
+      const password = values.password; // password not stripped except trim
+      await login(email.trim(), password);
       // navigation automatically switches due to auth context
     } catch (error: any) {
       Alert.alert(

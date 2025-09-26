@@ -55,6 +55,10 @@
     },
     "developmentClient": {
       "silentLaunch": false
+    },
+    "extra": {
+      "API_BASE_URL": "https://api.example.com",
+      "API_TIMEOUT": "15000"
     }
   }
 }
