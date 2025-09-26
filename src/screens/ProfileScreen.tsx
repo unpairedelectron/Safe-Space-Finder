@@ -2,8 +2,10 @@ import React from 'react';
 import { View, StyleSheet, ScrollView } from 'react-native';
 import { Title, Paragraph, Card, Button, Avatar, Divider } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useAuth } from '@/state/auth/AuthContext';
 
 export default function ProfileScreen({ navigation }: { navigation: any }) {
+  const { user, logout } = useAuth();
   return (
     <ScrollView style={styles.container}>
       <LinearGradient
@@ -11,8 +13,8 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
         style={styles.header}
       >
         <Avatar.Icon size={80} icon="person" style={styles.avatar} />
-        <Title style={styles.name}>John Doe</Title>
-        <Paragraph style={styles.email}>john.doe@example.com</Paragraph>
+        <Title style={styles.name}>{user?.name || 'Anonymous'}</Title>
+        <Paragraph style={styles.email}>{user?.email || ''}</Paragraph>
       </LinearGradient>
       
       <View style={styles.content}>
@@ -48,8 +50,9 @@ export default function ProfileScreen({ navigation }: { navigation: any }) {
 
         <Button
           mode="outlined"
-          onPress={() => navigation.navigate('Login')}
+          onPress={logout}
           style={styles.logoutButton}
+          accessibilityLabel="Sign out"
         >
           Sign Out
         </Button>

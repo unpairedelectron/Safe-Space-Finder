@@ -5,9 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Formik, Field } from 'formik';
 import * as Yup from 'yup';
 import { ValidatedTextInput } from '../components/ValidatedInput';
-import axios from 'axios';
-
-const API_BASE = 'http://localhost:3000/api';
+import { useAuth } from '@/state/auth/AuthContext';
 
 const loginSchema = Yup.object().shape({
   email: Yup.string()
@@ -20,17 +18,17 @@ const loginSchema = Yup.object().shape({
 
 export default function LoginScreen({ navigation }: { navigation: any }) {
   const [loading, setLoading] = useState(false);
+  const { login } = useAuth();
 
   const handleLogin = async (values: { email: string; password: string }) => {
     setLoading(true);
     try {
-      const response = await axios.post(`${API_BASE}/auth/login`, values);
-      // Store token and navigate
-      navigation.navigate('Home');
+      await login(values.email, values.password);
+      // navigation automatically switches due to auth context
     } catch (error: any) {
       Alert.alert(
         'Login Failed',
-        error.response?.data?.message || 'Please check your credentials and try again.'
+        error?.message || 'Please check your credentials and try again.'
       );
     }
     setLoading(false);

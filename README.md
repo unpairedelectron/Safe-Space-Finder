@@ -113,6 +113,15 @@ Implemented with `SwipeableList` component wrapping `react-native-swipe-list-vie
 | Notifications not working | Must use physical device; reinstall Expo Go if permission permanently denied |
 | Stuck splash | Safety timer added; check device logs (shake → Show Logs) |
 
+## Recent Core Additions (Auth & Stability)
+- Secure auth context with token refresh & secure storage
+- Global error boundary + centralized snackbar notifications
+- Offline network banner
+- Basic Jest testing setup (example sanitizeInput test)
+- API layer (axios wrapper with refresh handling)
+
+These were prioritized as essential for a stable public release baseline.
+
 ## Contributing
 1. Create feature branch: `git checkout -b feat/your-feature`
 2. Commit with conventional message style: `feat: add X`, `fix: correct Y`

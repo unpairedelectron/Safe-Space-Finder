@@ -8,10 +8,8 @@ import { AccessibilityTags } from '../components/AccessibilityTags';
 import { SocialActions, UserProfileBadge, LikeButton } from '../components/SocialFeatures';
 import { notificationService } from '../services/NotificationService';
 import { ProgressiveImage } from '../components/LoadingOptimizations';
-import axios from 'axios';
 
-const API_BASE = 'http://localhost:3000/api';
-
+// API integration WIP: will replace mock data with real fetch using businessApi
 export default function BusinessDetailScreen({ route, navigation }: { route: any; navigation: any }) {
   const { businessId } = route.params;
   const [business, setBusiness] = useState<any>(null);

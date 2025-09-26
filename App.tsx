@@ -15,12 +15,40 @@ import DemoScreen from './src/screens/DemoScreen';
 import TabNavigator from './src/navigation/TabNavigator';
 import { notificationService } from './src/services/NotificationService';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AuthProvider, useAuth } from '@/state/auth/AuthContext';
+import { GlobalErrorBoundary } from '@/components/GlobalErrorBoundary';
+import { SnackbarProvider } from '@/components/SnackbarHost';
+import { NetworkStatusBanner } from '@/components/NetworkStatusBanner';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
 
 const Stack = createStackNavigator();
 const queryClient = new QueryClient();
+
+function RootNavigator() {
+  const { user, isInitializing } = useAuth();
+  if (isInitializing) return null;
+  return (
+    <Stack.Navigator initialRouteName={user ? 'Home' : 'Onboarding'}>
+      {!user && (
+        <>
+          <Stack.Screen name="Onboarding" component={OnboardingScreen} options={{ headerShown: false, gestureEnabled: false }} />
+          <Stack.Screen name="Login" component={LoginScreen} options={{ title: 'Welcome', headerShown: false }} />
+          <Stack.Screen name="Register" component={RegisterScreen} options={{ title: 'Create Account', headerShown: false }} />
+        </>
+      )}
+      {user && (
+        <>
+          <Stack.Screen name="Home" component={TabNavigator} options={{ headerShown: false, gestureEnabled: false }} />
+          <Stack.Screen name="BusinessDetail" component={BusinessDetailScreen} options={{ title: 'Business Details', headerShown: false }} />
+          <Stack.Screen name="Review" component={ReviewScreen} options={{ title: 'Add Review', headerShown: false }} />
+          <Stack.Screen name="Demo" component={DemoScreen} options={{ title: 'Feature Demo', headerShown: false }} />
+        </>
+      )}
+    </Stack.Navigator>
+  );
+}
 
 export default function App() {
   const colorScheme = useColorScheme();
@@ -104,6 +132,10 @@ export default function App() {
     <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
       <PaperProvider theme={theme}>
         <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <GlobalErrorBoundary>
+            <SnackbarProvider>
+            <NetworkStatusBanner />
         <NavigationContainer
           linking={{
             prefixes: ['safespace://'],
@@ -120,65 +152,11 @@ export default function App() {
             },
           }}
         >
-          <Stack.Navigator initialRouteName="Onboarding">
-            <Stack.Screen 
-              name="Onboarding" 
-              component={OnboardingScreen} 
-              options={{ 
-                headerShown: false,
-                gestureEnabled: false,
-              }} 
-            />
-            <Stack.Screen 
-              name="Login" 
-              component={LoginScreen} 
-              options={{ 
-                title: 'Welcome',
-                headerShown: false 
-              }} 
-            />
-            <Stack.Screen 
-              name="Register" 
-              component={RegisterScreen} 
-              options={{ 
-                title: 'Create Account',
-                headerShown: false 
-              }} 
-            />
-            <Stack.Screen 
-              name="Home" 
-              component={TabNavigator} 
-              options={{ 
-                headerShown: false,
-                gestureEnabled: false,
-              }} 
-            />
-            <Stack.Screen 
-              name="BusinessDetail" 
-              component={BusinessDetailScreen} 
-              options={{ 
-                title: 'Business Details',
-                headerShown: false,
-              }} 
-            />
-            <Stack.Screen 
-              name="Review" 
-              component={ReviewScreen} 
-              options={{ 
-                title: 'Add Review',
-                headerShown: false,
-              }} 
-            />
-            <Stack.Screen 
-              name="Demo" 
-              component={DemoScreen} 
-              options={{ 
-                title: 'Feature Demo',
-                headerShown: false,
-              }} 
-            />
-          </Stack.Navigator>
+          <RootNavigator />
         </NavigationContainer>
+            </SnackbarProvider>
+            </GlobalErrorBoundary>
+          </AuthProvider>
         </QueryClientProvider>
       </PaperProvider>
     </View>

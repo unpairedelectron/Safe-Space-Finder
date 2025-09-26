@@ -4,9 +4,7 @@ import { Button, Card, Title } from 'react-native-paper';
 import { Formik, Field } from 'formik';
 import * as Yup from 'yup';
 import { ValidatedTextInput, PasswordStrength } from '../components/ValidatedInput';
-import axios from 'axios';
-
-const API_BASE = 'http://localhost:3000/api';
+import { useAuth } from '@/state/auth/AuthContext';
 
 const registrationSchema = Yup.object().shape({
   name: Yup.string()
@@ -30,20 +28,15 @@ const registrationSchema = Yup.object().shape({
 
 export default function RegisterScreen({ navigation }: { navigation: any }) {
   const [loading, setLoading] = useState(false);
+  const { register } = useAuth();
 
   const handleRegister = async (values: any) => {
     setLoading(true);
     try {
-      await axios.post(`${API_BASE}/auth/register`, {
-        name: values.name,
-        email: values.email, 
-        password: values.password
-      });
-      Alert.alert('Success', 'Registration successful', [
-        { text: 'OK', onPress: () => navigation.navigate('Login') },
-      ]);
-    } catch (error) {
-      Alert.alert('Error', 'Registration failed. Please try again.');
+      await register(values.name, values.email, values.password);
+      // Auth context switches navigation to Home
+    } catch (error: any) {
+      Alert.alert('Error', error?.message || 'Registration failed. Please try again.');
     }
     setLoading(false);
   };
