@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, StyleSheet, ScrollView, RefreshControl, Share, Alert, useColorScheme, AccessibilityInfo } from 'react-native';
+import { View, StyleSheet, ScrollView, RefreshControl, Share, Alert, useColorScheme, AccessibilityInfo, Animated, Easing } from 'react-native';
 import { Searchbar, Button, Card, Title, Paragraph, FAB, Chip, Divider, ActivityIndicator } from 'react-native-paper';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SkeletonCard } from '../components/SkeletonCard';
@@ -78,10 +78,24 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   const colorScheme = useColorScheme();
   const gradient = useMemo(() => createGradient(colorScheme === 'dark'), [colorScheme]);
   const [reduceMotion, setReduceMotion] = useState(false);
+  const [mountedAnim] = useState(new Animated.Value(0));
 
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      mountedAnim.setValue(1);
+      return;
+    }
+    Animated.timing(mountedAnim, {
+      toValue: 1,
+      duration: ds.motion.duration.md,
+      easing: ds.motion.easing.standard,
+      useNativeDriver: true,
+    }).start();
+  }, [reduceMotion]);
 
   const { data: apiBusinesses, isLoading: apiLoading, error: apiError, refetch, isFetching } = useQuery<Business[]>({
     queryKey: ['businesses'],
@@ -119,6 +133,18 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
   const handleBookmark = (id: string) => { /* placeholder for future server call */ };
 
   const listData = filteredBusinesses.map(b => ({ id: b.id, title: b.name, subtitle: b.description, rating: b.rating, category: b.category, tags: b.tags }));
+
+  const animatedContainerStyle = useMemo(() => ({
+    opacity: mountedAnim,
+    transform: [
+      {
+        translateY: mountedAnim.interpolate({
+          inputRange: [0, 1],
+            outputRange: reduceMotion ? [0, 0] : [12, 0],
+        }),
+      },
+    ],
+  }), [mountedAnim, reduceMotion]);
 
   return (
     <View style={styles.container}>
@@ -178,28 +204,28 @@ export default function HomeScreen({ navigation }: { navigation: any }) {
         <Paragraph accessibilityLabel={`Found ${listData.length} results`}>{listData.length} result{listData.length === 1 ? '' : 's'}</Paragraph>
       </View>
 
-      {/* Loading skeleton state */}
-      {apiLoading && !apiBusinesses ? (
-        <View style={{ paddingHorizontal: 16 }}>
-          {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
-        </View>
-      ) : (
-        <SwipeableList
-          data={listData}
-          renderItem={({ item }) => (
-            <BusinessCard
-              item={item as any}
-              onPress={() => navigation.navigate('BusinessDetail', { businessId: item.id })}
-            />
-          )}
-          leftActions={[createLikeAction(() => handleLike('temp'))]}
-          rightActions={[createBookmarkAction(() => handleBookmark('temp')), createShareAction(() => handleShare({ id: 'temp', name: 'Business' } as any))]}
-          refreshing={refreshing || apiLoading}
-          onRefresh={onRefresh}
-          emptyText="No businesses match your criteria"
-        />
-      )}
-
+      <Animated.View style={[{ flex: 1 }, animatedContainerStyle]}>
+        {apiLoading && !apiBusinesses ? (
+          <View style={{ paddingHorizontal: 16 }}>
+            {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
+          </View>
+        ) : (
+          <SwipeableList
+            data={listData}
+            renderItem={({ item }) => (
+              <BusinessCard
+                item={item as any}
+                onPress={() => navigation.navigate('BusinessDetail', { businessId: item.id })}
+              />
+            )}
+            leftActions={[createLikeAction(() => handleLike('temp'))]}
+            rightActions={[createBookmarkAction(() => handleBookmark('temp')), createShareAction(() => handleShare({ id: 'temp', name: 'Business' } as any))]}
+            refreshing={refreshing || apiLoading}
+            onRefresh={onRefresh}
+            emptyText="No businesses match your criteria"
+          />
+        )}
+      </Animated.View>
       <FAB icon="plus" style={styles.fab} onPress={() => navigation.navigate('Businesses')} accessibilityLabel="Open full business list" />
     </View>
   );

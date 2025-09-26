@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
-import { Pressable, Animated, View, StyleSheet, AccessibilityProps } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { Pressable, Animated, View, StyleSheet, AccessibilityProps, AccessibilityInfo, useColorScheme } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { ds } from '@/theme/designSystem';
 
 interface AnimatedButtonProps extends AccessibilityProps {
   children: React.ReactNode;
   onPress: () => void;
   style?: any;
-  hapticType?: 'light' | 'medium' | 'heavy';
+  hapticType?: 'light' | 'medium' | 'heavy' | 'none';
+  reduceMotionOverride?: boolean; // for tests
 }
 
 export const AnimatedButton: React.FC<AnimatedButtonProps> = ({
@@ -18,41 +20,61 @@ export const AnimatedButton: React.FC<AnimatedButtonProps> = ({
   accessibilityHint,
   accessibilityRole,
   accessibilityState,
+  reduceMotionOverride,
   ...rest
 }) => {
   const [scaleValue] = useState(new Animated.Value(1));
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const scheme = useColorScheme();
+  const isDark = scheme === 'dark';
 
-  const handlePressIn = () => {
-    Animated.spring(scaleValue, {
-      toValue: 0.95,
-      useNativeDriver: true,
-    }).start();
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then(val => setPrefersReducedMotion(val))
+      .catch(() => {});
+  }, []);
+
+  const actuallyReduce = reduceMotionOverride ?? prefersReducedMotion;
+
+  const animateTo = (toValue: number, spring = true) => {
+    if (actuallyReduce) {
+      scaleValue.setValue(1); // no scale changes if user prefers reduced motion
+      return;
+    }
+    if (spring) {
+      Animated.spring(scaleValue, {
+        toValue,
+        useNativeDriver: true,
+        speed: 20,
+        bounciness: 6,
+      }).start();
+    } else {
+      Animated.timing(scaleValue, {
+        toValue,
+        duration: ds.motion.duration.sm,
+        easing: ds.motion.easing.standard,
+        useNativeDriver: true,
+      }).start();
+    }
   };
 
-  const handlePressOut = () => {
-    Animated.spring(scaleValue, {
-      toValue: 1,
-      friction: 3,
-      tension: 40,
-      useNativeDriver: true,
-    }).start();
-  };
+  const handlePressIn = () => animateTo(0.95);
+  const handlePressOut = () => animateTo(1);
 
   const handlePress = () => {
-    // Trigger haptic feedback
     switch (hapticType) {
       case 'light':
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        break;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); break;
       case 'medium':
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        break;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); break;
       case 'heavy':
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-        break;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy); break;
     }
     onPress();
   };
+
+  // Provide subtle background/elevation treatment on press (visual feedback w/out motion)
+  const elevationStyle = actuallyReduce ? (isDark ? styles.darkReduced : styles.lightReduced) : undefined;
 
   return (
     <Pressable
@@ -68,9 +90,8 @@ export const AnimatedButton: React.FC<AnimatedButtonProps> = ({
       <Animated.View
         style={[
           style,
-          {
-            transform: [{ scale: scaleValue }],
-          },
+          elevationStyle,
+          { transform: [{ scale: scaleValue }] },
         ]}
       >
         {children}
@@ -78,3 +99,14 @@ export const AnimatedButton: React.FC<AnimatedButtonProps> = ({
     </Pressable>
   );
 };
+
+const styles = StyleSheet.create({
+  darkReduced: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: ds.radii.sm,
+  },
+  lightReduced: {
+    backgroundColor: 'rgba(0,0,0,0.04)',
+    borderRadius: ds.radii.sm,
+  },
+});

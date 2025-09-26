@@ -1,6 +1,8 @@
 // Centralized design tokens & helpers
 // Extend or generate from backend config/theme service if needed
 
+import { Easing } from 'react-native';
+
 export const palette = {
   primary: '#4CAF50',
   primaryAlt: '#66BB6A',
@@ -59,15 +61,32 @@ export const typography = {
   },
 };
 
+// Motion design tokens (durations/easing/variants) – respects reduced motion upstream
+export const motion = {
+  duration: {
+    instant: 0,
+    xs: 120,
+    sm: 180,
+    md: 260,
+    lg: 400,
+  },
+  easing: {
+    standard: Easing.bezier(0.2, 0.0, 0.2, 1),
+    accelerated: Easing.bezier(0.4, 0.0, 0.2, 1),
+    decel: Easing.bezier(0.0, 0.0, 0.2, 1),
+  },
+};
+
 export interface DesignSystem {
   palette: typeof palette;
   spacing: typeof spacing;
   radii: typeof radii;
   shadows: typeof shadows;
   typography: typeof typography;
+  motion: typeof motion;
 }
 
-export const ds: DesignSystem = { palette, spacing, radii, shadows, typography };
+export const ds: DesignSystem = { palette, spacing, radii, shadows, typography, motion };
 
 export function createGradient(isDark: boolean): [string, string] {
   return isDark ? ['#2E7D32', '#388E3C'] : [palette.primary, palette.primaryAlt];
