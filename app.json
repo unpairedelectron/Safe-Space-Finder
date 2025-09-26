@@ -1,30 +1,60 @@
 {
   "expo": {
-    "name": "SafeSpaceFinder",
-    "slug": "SafeSpaceFinder",
+    "name": "Safe Space Finder",
+    "slug": "safe-space-finder",
     "version": "1.0.0",
+    "description": "Discover inclusive businesses and safe spaces for underrepresented communities",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#4CAF50"
     },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.safespace.finder"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#4CAF50"
       },
+      "package": "com.safespace.finder",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-splash-screen",
+      "expo-font",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#4CAF50",
+          "sounds": ["./assets/notification-sound.wav"]
+        }
+      ]
+    ],
+    "scheme": "safespace",
+    "experiments": {
+      "typedRoutes": true
+    },
+    "updates": {
+      "enabled": false,
+      "fallbackToCacheTimeout": 0
+    },
+    "developmentClient": {
+      "silentLaunch": false
     }
   }
 }
