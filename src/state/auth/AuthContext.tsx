@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 import * as SecureStore from 'expo-secure-store';
 import { login as loginApi, register as registerApi, logoutApi, AuthResponse, AuthUser } from '@/services/api/authApi';
 import { refreshTokens } from '@/services/api/authApi';
+import { setAuthFailureHandler } from '@/services/api/httpClient';
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -116,6 +117,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     })();
   }, []);
+
+  useEffect(() => {
+    setAuthFailureHandler(async () => {
+      await logout();
+    });
+  }, [logout]);
 
   return (
     <AuthContext.Provider value={{ user, accessToken, isInitializing, login, register, logout }}>

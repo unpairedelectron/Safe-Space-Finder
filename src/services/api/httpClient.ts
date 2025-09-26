@@ -12,6 +12,7 @@ export interface ApiErrorShape {
 }
 
 let pendingRefresh: Promise<string | null> | null = null;
+let authFailureHandler: (() => void | Promise<void>) | null = null;
 
 async function getStoredToken() {
   try { return await SecureStore.getItemAsync('accessToken'); } catch { return null; }
@@ -19,6 +20,7 @@ async function getStoredToken() {
 async function getStoredRefreshToken() {
   try { return await SecureStore.getItemAsync('refreshToken'); } catch { return null; }
 }
+export function setAuthFailureHandler(fn: () => void | Promise<void>) { authFailureHandler = fn; }
 
 export class HttpClient {
   private instance: AxiosInstance;
@@ -43,18 +45,20 @@ export class HttpClient {
         const original = error.config as AxiosRequestConfig & { _retry?: boolean };
         const status = error.response?.status || 0;
 
-        if (status === 401 && !original._retry) {
+        if ((status === 401 || status === 403) && !original._retry) {
           original._retry = true;
           try {
-            const newToken = await this.tryRefresh();
-            if (newToken) {
-              original.headers = original.headers || {};
-              (original.headers as any).Authorization = `Bearer ${newToken}`;
-              return this.instance(original);
+            if (status === 401) {
+              const newToken = await this.tryRefresh();
+              if (newToken) {
+                original.headers = original.headers || {};
+                (original.headers as any).Authorization = `Bearer ${newToken}`;
+                return this.instance(original);
+              }
             }
-          } catch {
-            // fall through to normalized error
-          }
+          } catch { /* ignore */ }
+          // If still unauthorized or forbidden, trigger global auth failure
+          if (authFailureHandler) await authFailureHandler();
         }
 
         const norm: ApiErrorShape = {
